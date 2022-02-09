@@ -1,0 +1,58 @@
+{
+  "name": "cccapture.js",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "A library to capture canvas-based animations at a fixed framerate",
+  "author": "Matsura Yuma <lemonburst1958@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sabigara/ccapture.js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sabigara/ccapture.js/issues"
+  },
+  "homepage": "https://github.com/sabigara/ccapture.js#readme",
+  "keywords": [
+    "capture",
+    "canvas",
+    "webgl",
+    "animation"
+  ],
+  "source": "src/index.ts",
+  "main": "dist/main.js",
+  "module": "dist/module.js",
+  "types": "dist/types.d.ts",
+  "targets": {
+    "browser": {
+      "context": "browser",
+      "outputFormat": "esmodule",
+      "isLibrary": true,
+      "includeNodeModules": true
+    }
+  },
+  "scripts": {
+    "watch": "parcel watch",
+    "build": "parcel build"
+  },
+  "dependencies": {
+    "deepmerge": "^4.2.2",
+    "downloadjs": "^1.4.7",
+    "mitt": "^3.0.0",
+    "nanoid": "^3.2.0"
+  },
+  "devDependencies": {
+    "@parcel/packager-ts": "^2.2.1",
+    "@parcel/transformer-typescript-types": "^2.2.1",
+    "@types/downloadjs": "^1.4.3",
+    "@typescript-eslint/eslint-plugin": "^5.11.0",
+    "@typescript-eslint/parser": "^5.11.0",
+    "eslint": "^8.8.0",
+    "eslint-config-prettier": "^8.3.0",
+    "eslint-plugin-import": "^2.25.4",
+    "eslint-plugin-prettier": "^4.0.0",
+    "eslint-plugin-unused-imports": "^2.0.0",
+    "parcel": "^2.2.1",
+    "prettier": "^2.5.1",
+    "typescript": "^4.5.5"
+  }
+}
