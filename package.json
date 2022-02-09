@@ -6,12 +6,12 @@
   "author": "Matsura Yuma <lemonburst1958@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sabigara/ccapture.js.git"
+    "url": "git+https://github.com/sabigara/cccapture.js.git"
   },
   "bugs": {
-    "url": "https://github.com/sabigara/ccapture.js/issues"
+    "url": "https://github.com/sabigara/cccapture.js/issues"
   },
-  "homepage": "https://github.com/sabigara/ccapture.js#readme",
+  "homepage": "https://github.com/sabigara/cccapture.js#readme",
   "keywords": [
     "capture",
     "canvas",
