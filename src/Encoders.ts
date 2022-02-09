@@ -3,6 +3,7 @@ import { pad } from "./utils";
 import { nanoid } from "nanoid";
 import mitt from "mitt";
 import deepmerge from "deepmerge";
+import download from "downloadjs";
 
 type CanvasEncoderEvent = {
   process: () => void;
@@ -60,26 +61,33 @@ export function defaultSettings(): CanvasEncoderSettings {
 export type CanvasEncoderFormat = "png" | "jpeg" | "webm";
 
 class TarEncoder {
-  settings: CanvasEncoderSettings;
-  extension = ".tar";
-  mimetype = "application/x-tar";
+  itemExtension: string;
   filename = "";
   baseFilename: string;
+  autoSaveTime: number | null;
+  framerate: number;
   tape = new Tar();
   count = 0;
   part = 1;
   frames = 0;
+  step: () => void;
 
-  constructor(settings: CanvasEncoderSettings) {
-    this.settings = settings;
-    this.baseFilename = this.settings.filename;
+  constructor(options: {
+    itemExtension: string;
+    autoSaveTime: number | null;
+    framerate: number;
+    step: () => void;
+  }) {
+    this.itemExtension = options.itemExtension;
+    this.autoSaveTime = options.autoSaveTime;
+    this.framerate = options.framerate;
+    this.step = options.step;
+    this.baseFilename = this.filename;
   }
 
   start() {
     this.dispose();
   }
-
-  stop() {}
 
   addFrame(blob: Blob) {
     const fileReader = new FileReader();
@@ -88,29 +96,28 @@ class TarEncoder {
         throw new Error("Failed to load file.");
       }
       this.tape.append(
-        pad(this.count) + this.extension,
+        pad(this.count) + this.itemExtension,
         new Uint8Array(e.target.result)
       );
-
       if (
-        this.settings.autoSaveTime &&
-        this.frames / this.settings.framerate >= this.settings.autoSaveTime
+        this.autoSaveTime &&
+        this.frames / this.framerate >= this.autoSaveTime
       ) {
         this.save((blob: Blob) => {
           this.filename = this.baseFilename + "-part-" + pad(this.part);
-          // download(blob, this.filename + this.extension, this.mimeType);
+          download(blob, this.filename + ".tar", "application/x-tar");
           const count = this.count;
           this.dispose();
           this.count = count + 1;
           this.part++;
           this.filename = this.baseFilename + "-part-" + pad(this.part);
           this.frames = 0;
-          this.settings.step();
+          this.step();
         });
       } else {
         this.count++;
         this.frames++;
-        this.settings.step();
+        this.step();
       }
     };
     fileReader.readAsArrayBuffer(blob);
@@ -127,15 +134,22 @@ class TarEncoder {
 }
 
 export class CanvasToPngEncoder implements CanvasEncoder {
-  mimetype = "image/png";
-  extension = ".png";
+  mimetype = "application/x-tar";
+  extension = ".tar";
+  itemMimetype = "image/png";
+  itemExtension = ".png";
   settings: CanvasEncoderSettings;
   tarEncoder: TarEncoder;
   emitter = mitt<CanvasEncoderEvent>();
 
   constructor(options: CanvasEncoderSettingsOptions = {}) {
     this.settings = deepmerge(defaultSettings(), options);
-    this.tarEncoder = new TarEncoder(this.settings);
+    this.tarEncoder = new TarEncoder({
+      autoSaveTime: this.settings.autoSaveTime,
+      framerate: this.settings.framerate,
+      itemExtension: ".png",
+      step: this.settings.step,
+    });
   }
 
   on(...args: Parameters<CanvasEncoder["on"]>) {
@@ -146,9 +160,7 @@ export class CanvasToPngEncoder implements CanvasEncoder {
     this.tarEncoder.start();
   }
 
-  stop() {
-    this.tarEncoder.stop();
-  }
+  stop() {}
 
   addFrame(canvas: HTMLCanvasElement) {
     canvas.toBlob((blob: Blob | null) => {
@@ -156,7 +168,7 @@ export class CanvasToPngEncoder implements CanvasEncoder {
         throw new Error("Failed to canvas.toBlob()");
       }
       this.tarEncoder.addFrame(blob);
-    }, this.mimetype);
+    }, this.itemMimetype);
   }
 
   save(callback?: (blob: Blob) => void) {

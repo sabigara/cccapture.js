@@ -26,7 +26,7 @@ export class CCapture {
   _frameCount = 0;
   _intermediateFrameCount = 0;
   _lastFrame = null;
-  _requestAnimationFrameCallbacks: FrameRequestCallback[] = [];
+  _requestAnimationFrameCallbacks: (() => void)[] = [];
   _capturing = false;
   _handlers = {};
   motionBlurCanvas: HTMLCanvasElement;
@@ -35,14 +35,14 @@ export class CCapture {
   imageData?: ImageData;
   mediaArray: (HTMLVideoElement | HTMLAudioElement)[] = [];
 
-  windowDefaultTimeMethods = {
-    setTimeout: window.setTimeout,
-    setInterval: window.setInterval,
-    clearInterval: window.clearInterval,
-    clearTimeout: window.clearTimeout,
-    requestAnimationFrame: window.requestAnimationFrame,
-    dateNow: window.Date.now,
+  originalTimeFns = {
+    setTimeout: window.setTimeout.bind(window),
+    setInterval: window.setInterval.bind(window),
+    clearInterval: window.clearInterval.bind(window),
+    clearTimeout: window.clearTimeout.bind(window),
+    requestAnimationFrame: window.requestAnimationFrame.bind(window),
     performanceNow: window.performance.now,
+    dateNow: window.Date.now.bind(Date),
     getTime: window.Date.prototype.getTime,
   };
 
@@ -58,30 +58,11 @@ export class CCapture {
     this._log("Step is set to " + this._settings.stepInterval + "ms");
 
     this._encoder = newCanvasEncoder(this._settings.format, {
-      step: this._step,
+      step: this._step.bind(this),
     });
 
     // this._encoder.on("process", this._process);
     // this._encoder.on("progress", this._progress);
-
-    Date.now =
-      Date.now ||
-      function () {
-        // thanks IE8
-        return new Date().getTime();
-      };
-
-    // if ("now" in window.performance === false) {
-    //   let nowOffset = Date.now();
-
-    //   if (performance.timing && performance.timing.navigationStart) {
-    //     nowOffset = performance.timing.navigationStart;
-    //   }
-
-    //   window.performance.now = function now() {
-    //     return Date.now() - nowOffset;
-    //   };
-    // }
   }
 
   _init() {
@@ -138,7 +119,7 @@ export class CCapture {
       this._log("clear Interval");
       return null;
     };
-    window.requestAnimationFrame = (callback) => {
+    (window.requestAnimationFrame as any) = (callback: () => void) => {
       this._requestAnimationFrameCallbacks.push(callback);
       return 0;
     };
@@ -184,27 +165,57 @@ export class CCapture {
     this._destroy();
   }
 
-  _call(fn: () => void) {
-    this.windowDefaultTimeMethods.setTimeout(fn.bind(this), 0);
-    // fn();
-  }
-
   _step() {
-    //_oldRequestAnimationFrame( _process );
-    this._call(this._process.bind(this));
+    const step = 1000 / this._settings.framerate;
+    const dt =
+      (this._frameCount +
+        this._intermediateFrameCount / this._settings.motionBlurFrames) *
+      step;
+
+    this._time = this._startTime + dt;
+    this._performanceTime = this._performanceStartTime + dt;
+
+    this.mediaArray.forEach((v) => {
+      (v as any)._hookedTime = dt / 1000;
+    });
+
+    this._updateTime();
+    this._log(
+      "Frame: " + this._frameCount + " " + this._intermediateFrameCount
+    );
+
+    for (var j = 0; j < this._timeouts.length; j++) {
+      if (this._time >= this._timeouts[j].triggerTime) {
+        this.originalTimeFns.setTimeout(this._timeouts[j].callback);
+        this._timeouts.splice(j, 1);
+        continue;
+      }
+    }
+
+    for (var j = 0; j < this._intervals.length; j++) {
+      if (this._time >= this._intervals[j].triggerTime) {
+        this.originalTimeFns.setTimeout(this._intervals[j].callback);
+        this._intervals[j].triggerTime += this._intervals[j].time;
+        continue;
+      }
+    }
+
+    this._requestAnimationFrameCallbacks.forEach((cb) => {
+      this.originalTimeFns.setTimeout(cb);
+    });
+    this._requestAnimationFrameCallbacks = [];
   }
 
   _destroy() {
     this._log("Capturer stop");
-    window.setTimeout = this.windowDefaultTimeMethods.setTimeout;
-    window.setInterval = this.windowDefaultTimeMethods.setInterval;
-    window.clearInterval = this.windowDefaultTimeMethods.clearInterval;
-    window.clearTimeout = this.windowDefaultTimeMethods.clearTimeout;
-    window.requestAnimationFrame =
-      this.windowDefaultTimeMethods.requestAnimationFrame;
-    window.Date.prototype.getTime = this.windowDefaultTimeMethods.getTime;
-    window.Date.now = this.windowDefaultTimeMethods.dateNow;
-    window.performance.now = this.windowDefaultTimeMethods.performanceNow;
+    window.setTimeout = this.originalTimeFns.setTimeout;
+    window.setInterval = this.originalTimeFns.setInterval;
+    window.clearInterval = this.originalTimeFns.clearInterval;
+    window.clearTimeout = this.originalTimeFns.clearTimeout;
+    window.requestAnimationFrame = this.originalTimeFns.requestAnimationFrame;
+    window.performance.now = this.originalTimeFns.performanceNow;
+    window.Date.prototype.getTime = this.originalTimeFns.getTime;
+    window.Date.now = this.originalTimeFns.dateNow;
   }
 
   _updateTime() {
@@ -307,49 +318,6 @@ export class CCapture {
     }
   }
 
-  _process() {
-    const step = 1000 / this._settings.framerate;
-    const dt =
-      (this._frameCount +
-        this._intermediateFrameCount / this._settings.motionBlurFrames) *
-      step;
-
-    this._time = this._startTime + dt;
-    this._performanceTime = this._performanceStartTime + dt;
-
-    this.mediaArray.forEach((v) => {
-      (v as any)._hookedTime = dt / 1000;
-    });
-
-    this._updateTime();
-    this._log(
-      "Frame: " + this._frameCount + " " + this._intermediateFrameCount
-    );
-
-    for (var j = 0; j < this._timeouts.length; j++) {
-      if (this._time >= this._timeouts[j].triggerTime) {
-        // this._call(this._timeouts[j].callback);
-        //console.log( 'timeout!' );
-        this._timeouts.splice(j, 1);
-        continue;
-      }
-    }
-
-    for (var j = 0; j < this._intervals.length; j++) {
-      if (this._time >= this._intervals[j].triggerTime) {
-        // this._call(this._intervals[j].callback);
-        this._intervals[j].triggerTime += this._intervals[j].time;
-        //console.log( 'interval!' );
-        continue;
-      }
-    }
-
-    this._requestAnimationFrameCallbacks.forEach((cb) => {
-      // this._call(cb);
-    });
-    this._requestAnimationFrameCallbacks = [];
-  }
-
   save(callback?: (blob: Blob) => void) {
     if (!callback) {
       callback = (blob: Blob) => {
@@ -370,30 +338,3 @@ export class CCapture {
     }
   }
 }
-
-// (freeWindow || freeSelf || {}).CCapture = CCapture;
-
-// // Some AMD build optimizers like r.js check for condition patterns like the following:
-// if (
-//   typeof define == "function" &&
-//   typeof define.amd == "object" &&
-//   define.amd
-// ) {
-//   // Define as an anonymous module so, through path mapping, it can be
-//   // referenced as the "underscore" module.
-//   define(function () {
-//     return CCapture;
-//   });
-// }
-// // Check for `exports` after `define` in case a build optimizer adds an `exports` object.
-// else if (freeExports && freeModule) {
-//   // Export for Node.js.
-//   if (moduleExports) {
-//     (freeModule.exports = CCapture).CCapture = CCapture;
-//   }
-//   // Export for CommonJS support.
-//   freeExports.CCapture = CCapture;
-// } else {
-//   // Export to the global object.
-//   root.CCapture = CCapture;
-// }
