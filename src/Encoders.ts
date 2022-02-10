@@ -2,8 +2,6 @@ import { Tar } from "./tar";
 import { pad } from "./utils";
 import { nanoid } from "nanoid";
 import mitt from "mitt";
-import deepmerge from "deepmerge";
-import download from "downloadjs";
 
 type CanvasEncoderEvent = {
   process: () => void;
@@ -13,15 +11,11 @@ type CanvasEncoderEvent = {
 const emitter = mitt<CanvasEncoderEvent>();
 
 export interface CanvasEncoder {
-  mimetype: string;
-  extension: string;
-  settings: CanvasEncoderSettings;
-
   on: typeof emitter.on;
   start: () => void;
   stop: () => void;
   addFrame: (canvas: HTMLCanvasElement) => void;
-  save: (callback?: (blob: Blob) => void) => void;
+  save: () => Blob;
 }
 
 export type CanvasEncoderSettings = {
@@ -58,7 +52,7 @@ export function defaultSettings(): CanvasEncoderSettings {
   } as const;
 }
 
-export type CanvasEncoderFormat = "png" | "jpeg" | "webm";
+export type CanvasEncoderFormat = "png";
 
 class TarEncoder {
   itemExtension: string;
@@ -103,17 +97,16 @@ class TarEncoder {
         this.autoSaveTime &&
         this.frames / this.framerate >= this.autoSaveTime
       ) {
-        this.save((blob: Blob) => {
-          this.filename = this.baseFilename + "-part-" + pad(this.part);
-          download(blob, this.filename + ".tar", "application/x-tar");
-          const count = this.count;
-          this.dispose();
-          this.count = count + 1;
-          this.part++;
-          this.filename = this.baseFilename + "-part-" + pad(this.part);
-          this.frames = 0;
-          this.step();
-        });
+        const blob = this.save();
+        this.filename = this.baseFilename + "-part-" + pad(this.part);
+        // download(blob, this.filename + ".tar", "application/x-tar");
+        const count = this.count;
+        this.dispose();
+        this.count = count + 1;
+        this.part++;
+        this.filename = this.baseFilename + "-part-" + pad(this.part);
+        this.frames = 0;
+        this.step();
       } else {
         this.count++;
         this.frames++;
@@ -123,8 +116,8 @@ class TarEncoder {
     fileReader.readAsArrayBuffer(blob);
   }
 
-  save(callback?: (blob: Blob) => void) {
-    callback?.(this.tape.save());
+  save() {
+    return this.tape.save();
   }
 
   dispose() {
@@ -133,32 +126,72 @@ class TarEncoder {
   }
 }
 
-export class CanvasToPngEncoder implements CanvasEncoder {
-  mimetype = "application/x-tar";
-  extension = ".tar";
-  itemMimetype = "image/png";
-  itemExtension = ".png";
-  settings: CanvasEncoderSettings;
-  tarEncoder: TarEncoder;
-  emitter = mitt<CanvasEncoderEvent>();
+class BlobListEncoder {
+  itemExtension: string;
+  filename = "";
+  baseFilename: string;
+  autoSaveTime: number | null;
+  framerate: number;
+  count = 0;
+  part = 1;
+  frames = 0;
+  step: () => void;
+  files: File[] = [];
 
-  constructor(options: CanvasEncoderSettingsOptions = {}) {
-    this.settings = deepmerge(defaultSettings(), options);
-    this.tarEncoder = new TarEncoder({
-      autoSaveTime: this.settings.autoSaveTime,
-      framerate: this.settings.framerate,
-      itemExtension: ".png",
-      step: this.settings.step,
-    });
+  constructor(options: {
+    itemExtension: string;
+    autoSaveTime: number | null;
+    framerate: number;
+    step: () => void;
+  }) {
+    this.itemExtension = options.itemExtension;
+    this.autoSaveTime = options.autoSaveTime;
+    this.framerate = options.framerate;
+    this.step = options.step;
+    this.baseFilename = this.filename;
+  }
+
+  start() {
+    this.dispose();
+  }
+
+  addFile(blob: Blob) {
+    this.files.push(new File([blob], pad(this.count) + this.itemExtension));
+    this.count++;
+    this.frames++;
+    this.step();
+  }
+
+  save(): File[] {
+    return this.files;
+  }
+
+  dispose() {
+    this.files = [];
+    this.count = 0;
+  }
+}
+
+export class CanvasToWebpEncoder {
+  container: Blob[] = [];
+
+  private itemMimetype = "image/webp";
+  private emitter = mitt<CanvasEncoderEvent>();
+  private step: () => void;
+
+  constructor(options: {
+    autoSaveTime: number | null;
+    framerate: number;
+    step: () => void;
+  }) {
+    this.step = options.step;
   }
 
   on(...args: Parameters<CanvasEncoder["on"]>) {
     this.emitter.on(...args);
   }
 
-  start() {
-    this.tarEncoder.start();
-  }
+  start() {}
 
   stop() {}
 
@@ -167,202 +200,26 @@ export class CanvasToPngEncoder implements CanvasEncoder {
       if (!blob) {
         throw new Error("Failed to canvas.toBlob()");
       }
-      this.tarEncoder.addFrame(blob);
+      this.container.push(blob);
+      this.step();
     }, this.itemMimetype);
   }
 
-  save(callback?: (blob: Blob) => void) {
-    this.tarEncoder.save(callback);
+  dispose() {
+    this.container = [];
+  }
+
+  save() {
+    return this.container;
   }
 }
 
-// class JpegEncoder {
-//   type = "image/jpeg";
-//   fileExtension = ".jpg";
-//   tarEncoder: TarEncoder;
-
-//   constructor(settings: CanvasEncoderSettings) {
-//     this.tarEncoder = new TarEncoder(settings);
-//   }
-
-//   add(canvas: HTMLCanvasElement) {
-//     canvas.toBlob(
-//       function (blob) {
-//         TarEncoder.prototype.addFrame.call(this, blob);
-//       }.bind(this),
-//       this.type,
-//       this.quality
-//     );
-//   }
-// }
-
-// class WebMEncoder {
-//   constructor(settings) {
-//     const canvas = document.createElement("canvas");
-//     if (canvas.toDataURL("image/webp").substr(5, 10) !== "image/webp") {
-//       console.log("WebP not supported - try another export format");
-//     }
-//   }
-
-//   quality = settings.quality / 100 || 0.8;
-
-//   extension = ".webm";
-//   mimeType = "video/webm";
-//   baseFilename = this.filename;
-//   framerate = settings.framerate;
-
-//   frames = 0;
-//   part = 1;
-
-//   videoWriter = new WebMWriter({
-//     quality: this.quality,
-//     fileWriter: null,
-//     fd: null,
-//     frameRate: this.framerate,
-//   });
-
-//   start(canvas: HTMLCanvasElement) {
-//     this.dispose(canvas);
-//   }
-
-//   add(canvas: HTMLCanvasElement) {
-//     this.videoWriter.addFrame(canvas);
-
-//     if (
-//       this.settings.autoSaveTime > 0 &&
-//       this.frames / this.settings.framerate >= this.settings.autoSaveTime
-//     ) {
-//       this.save(
-//         function (blob) {
-//           this.filename = this.baseFilename + "-part-" + pad(this.part);
-//           download(blob, this.filename + this.extension, this.mimeType);
-//           this.dispose();
-//           this.part++;
-//           this.filename = this.baseFilename + "-part-" + pad(this.part);
-//           this.step();
-//         }.bind(this)
-//       );
-//     } else {
-//       this.frames++;
-//       this.step();
-//     }
-//   }
-
-//   save(callback) {
-//     this.videoWriter.complete().then(callback);
-//   }
-
-//   dispose(canvas: HTMLCanvasElement) {
-//     this.frames = 0;
-//     this.videoWriter = new WebMWriter({
-//       quality: this.quality,
-//       fileWriter: null,
-//       fd: null,
-//       frameRate: this.framerate,
-//     });
-//   }
-// }
-
-// class FFMpegServerEncoder {
-//   constructor(settings) {
-//     settings.quality = settings.quality / 100 || 0.8;
-
-//     this.encoder = new FFMpegServer.Video(settings);
-//     this.encoder.on(
-//       "process",
-//       function () {
-//         this.emit("process");
-//       }.bind(this)
-//     );
-//     this.encoder.on(
-//       "finished",
-//       function (url, size) {
-//         const cb = this.callback;
-//         if (cb) {
-//           this.callback = undefined;
-//           cb(url, size);
-//         }
-//       }.bind(this)
-//     );
-//     this.encoder.on(
-//       "progress",
-//       function (progress) {
-//         if (this.settings.onProgress) {
-//           this.settings.onProgress(progress);
-//         }
-//       }.bind(this)
-//     );
-//     this.encoder.on(
-//       "error",
-//       function (data) {
-//         alert(JSON.stringify(data, null, 2));
-//       }.bind(this)
-//     );
-//   }
-
-//   start() {
-//     this.encoder.start(this.settings);
-//   }
-
-//   add(canvas) {
-//     this.encoder.add(canvas);
-//   }
-
-//   save(callback) {
-//     this.callback = callback;
-//     this.encoder.end();
-//   }
-
-//   safeToProceed() {
-//     return this.encoder.safeToProceed();
-//   }
-// }
-
-// class StreamEncoder {
-//   type = "video/webm";
-//   extension = ".webm";
-//   stream = null;
-//   mediaRecorder = null;
-//   chunks = [];
-
-//   constructor(settings) {
-//     this.framerate = this.settings.framerate;
-//   }
-
-//   add(canvas: HTMLCanvasElement) {
-//     if (!this.stream) {
-//       this.stream = canvas.captureStream(this.framerate);
-//       this.mediaRecorder = new MediaRecorder(this.stream);
-//       this.mediaRecorder.start();
-
-//       this.mediaRecorder.ondataavailable = (e) => {
-//         this.chunks.push(e.data);
-//       };
-//     }
-//     this.step();
-//   }
-
-//   save(callback) {
-//     this.mediaRecorder.onstop = (e) => {
-//       const blob = new Blob(this.chunks, { type: "video/webm" });
-//       this.chunks = [];
-//       callback(blob);
-//     };
-
-//     this.mediaRecorder.stop();
-//   }
-// }
-
 export function newCanvasEncoder(
   format: CanvasEncoderFormat,
-  options: CanvasEncoderSettingsOptions = {}
+  options: CanvasEncoderSettings
 ) {
   switch (format) {
-    case "jpeg":
-      throw new Error();
     case "png":
-      return new CanvasToPngEncoder(options);
-    case "webm":
-      throw new Error();
+      return new CanvasToWebpEncoder(options);
   }
 }

@@ -3,12 +3,14 @@ import {
   CanvasEncoderFormat,
   CanvasEncoderSettings,
   CanvasEncoderSettingsOptions,
-  CanvasToPngEncoder,
+  CanvasToWebpEncoder,
   defaultSettings,
   newCanvasEncoder,
 } from "./Encoders";
 import deepmerge from "deepmerge";
-import download from "downloadjs";
+import _download from "downloadjs";
+import { createFFmpeg, fetchFile } from "@ffmpeg/ffmpeg";
+import { pad } from "./utils";
 
 type Timer = { callback: () => void; time: number; triggerTime: number };
 
@@ -20,7 +22,7 @@ export class CCapture {
   _startTime = 0;
   _performanceTime = 0;
   _performanceStartTime = 0;
-  _encoder: CanvasEncoder;
+  _encoder: CanvasToWebpEncoder;
   _timeouts: Timer[] = [];
   _intervals: Timer[] = [];
   _frameCount = 0;
@@ -58,6 +60,7 @@ export class CCapture {
     this._log("Step is set to " + this._settings.stepInterval + "ms");
 
     this._encoder = newCanvasEncoder(this._settings.format, {
+      ...this._settings,
       step: this._step.bind(this),
     });
 
@@ -252,8 +255,6 @@ export class CCapture {
   }
 
   _blendFrame(canvas: HTMLCanvasElement) {
-    //_log( 'Intermediate Frame: ' + _intermediateFrameCount );
-
     this.motionBlurCanvasCtx.drawImage(canvas, 0, 0);
     this.imageData = this.motionBlurCanvasCtx.getImageData(
       0,
@@ -318,18 +319,8 @@ export class CCapture {
     }
   }
 
-  save(callback?: (blob: Blob) => void) {
-    if (!callback) {
-      callback = (blob: Blob) => {
-        download(
-          blob,
-          this._encoder.settings.filename + this._encoder.extension,
-          this._encoder.mimetype
-        );
-        return false;
-      };
-    }
-    this._encoder.save(callback);
+  save(): Blob[] {
+    return this._encoder.save();
   }
 
   _log(message: string) {
@@ -337,4 +328,26 @@ export class CCapture {
       console.log(message);
     }
   }
+}
+
+export async function toMp4(blobArray: Blob[]) {
+  const outputFilename = "output.mp4";
+  const ffmpeg = createFFmpeg({ log: true });
+  await ffmpeg.load();
+
+  await Promise.all(
+    blobArray.map(async (blob, i) => {
+      ffmpeg.FS(
+        "writeFile",
+        pad(i) + ".webp",
+        new Uint8Array(await blob.arrayBuffer())
+      );
+    })
+  );
+  await ffmpeg.run("-framerate", "30", "-i", "%07d.webp", outputFilename);
+  return ffmpeg.FS("readFile", outputFilename);
+}
+
+export function download(data: Uint8Array) {
+  _download(data, "output.mp4", "video/mp4");
 }
