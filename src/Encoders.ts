@@ -3,6 +3,8 @@ import { pad } from "./utils";
 import { nanoid } from "nanoid";
 import mitt from "mitt";
 
+const ws = new WebSocket("ws://localhost:8080/ws");
+
 type CanvasEncoderEvent = {
   process: () => void;
   progress: () => void;
@@ -200,7 +202,8 @@ export class CanvasToWebpEncoder {
       if (!blob) {
         throw new Error("Failed to canvas.toBlob()");
       }
-      this.container.push(blob);
+      // this.container.push(blob);
+      ws.send(blob);
       this.step();
     }, this.itemMimetype);
   }

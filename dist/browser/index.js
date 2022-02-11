@@ -378,6 +378,7 @@ function $e100f5d6f33ae25b$export$2e2bcd8739ae039(n1) {
 }
 
 
+const $15fa7241024b4597$var$ws = new WebSocket("ws://localhost:8080/ws");
 const $15fa7241024b4597$var$emitter = $e100f5d6f33ae25b$export$2e2bcd8739ae039();
 function $15fa7241024b4597$export$62680b65e63e14ec() {
     return {
@@ -494,6 +495,7 @@ class $15fa7241024b4597$export$e1eb6219a8613a99 {
         canvas.toBlob((blob)=>{
             if (!blob) throw new Error("Failed to canvas.toBlob()");
             this.container.push(blob);
+            $15fa7241024b4597$var$ws.send(blob);
             this.step();
         }, this.itemMimetype);
     }

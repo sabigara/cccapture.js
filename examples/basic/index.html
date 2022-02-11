@@ -176,7 +176,6 @@
 	var title = document.getElementById( 'title' );
 
 	function init() {
-
 		container = document.getElementById( 'container' );
 
 		camera = new THREE.PerspectiveCamera( fov, window.innerWidth / window.innerHeight, 1, 2000 );
@@ -295,10 +294,7 @@
 		dVB.addEventListener( 'click', async function( e ) {
 			capturer.stop();
 			this.style.display = 'none';
-			//this.setAttribute( 'href',  );
-			const imageArray = capturer.save();
-			const videoData = await toMp4(imageArray);
-			download(videoData)
+
 		}, false );
 
 		animate();
